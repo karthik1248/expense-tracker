@@ -2,7 +2,9 @@ import Expense from '../models/Expense.js'
 import mongoose from 'mongoose'
 import { expenseSchema } from '../validators/authValidator.js'
 import { updateExpenseSchema } from '../validators/authValidator.js'
+import redisClient from '../redisClient.js'
 
+// let summaryCache = null
 
 export const addExpense = async(req,res)=>{
      try {
@@ -18,6 +20,7 @@ export const addExpense = async(req,res)=>{
             date,
             user: req.user.id
         })
+        await redisClient.del("summary")
         res.json(expense)
     } catch (err) {
         console.log(err)
@@ -97,6 +100,7 @@ export const updateExpense = async(req,res)=>{
             // req.body,
             { returnDocument : 'after'}
         )
+        await redisClient.del("summary")
         if (!updatedExpense) {
             return res.status(404).json({ message: "Expense not found or unauthorized" })
         }
@@ -111,6 +115,7 @@ export const deleteExpense = async(req,res)=>{
     try {
             const id = req.params.id
             const deleteExpense = await Expense.findByIdAndDelete({ _id: id, user: req.user.id })
+            await redisClient.del("summary")
             if (!deleteExpense) {
                 return res.status(404).json("Invalid input")
             }
@@ -123,7 +128,13 @@ export const deleteExpense = async(req,res)=>{
 
 export const summary = async(req,res)=>{
     try{
-        console.log("Summary running")
+        console.log("Summary running")      
+        const cachedSummary = await redisClient.get("summary")
+        if(cachedSummary){
+            console.log("Redis Cache HIT")
+            return res.json(JSON.parse(cachedSummary))
+        }
+        console.log("Redis cache MISS")
         const result = await Expense.aggregate([
             {
                 $match:{
@@ -132,7 +143,7 @@ export const summary = async(req,res)=>{
             },
             {
                 $group:{    
-                    _id:"category",
+                    _id:"$category",
                     total:{$sum:"$amount"}
                 }   
             }
@@ -150,9 +161,17 @@ export const summary = async(req,res)=>{
             summary[item._id] = item.total
             summary.total += item.total
         })
+        await redisClient.set(
+            "summary",
+            JSON.stringify(summary),
+            "EX",
+            60
+        )
+        
         res.json(summary)
     }catch(err){
         console.log(err)
         res.status(500).json({message:"Server Error"})
     }
 }
+

@@ -8,6 +8,7 @@ import fs from 'fs'
 import authMiddleware from '../middleware/authMiddleware.js'
 import { registerSchema } from '../validators/authValidator.js'
 import { getCurrentUser, loginUser, registerUser, removeProfilePic, updateProfile, updateProfilePic } from "../controllers/authController.js"
+import rateLimiter from '../middleware/rateLimiter.js'
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -45,7 +46,7 @@ router.get('/me', authMiddleware, getCurrentUser)
 
 router.post('/register', registerUser)
 
-router.post("/login",loginUser)
+router.post("/login", rateLimiter, loginUser)
 
 router.put('/update', authMiddleware, updateProfile)
 
